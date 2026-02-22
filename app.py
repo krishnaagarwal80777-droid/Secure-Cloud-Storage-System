@@ -1,129 +1,142 @@
-from flask import Flask, request, redirect, url_for, render_template_string, session
+from flask import Flask, request, render_template_string, session, redirect
 import boto3
-import os
-from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-app.secret_key = "supersecretkey"  # Change in production
+app.secret_key = "supersecretkey"  # Change in real production
 
-# S3 Client (Uses IAM Role on EC2)
+# Initialize S3 client (Uses IAM Role automatically)
 s3 = boto3.client('s3')
 
 PRIMARY_BUCKET = "krishna-primary-storage"
 BACKUP_BUCKET = "krishna-backup-storage"
 
-# Temporary in-memory user storage (for demo)
+# In-memory user store (for demo)
 users = {}
 
-# ================= HOME PAGE =================
+HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+<title>Secure Cloud Storage</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="container mt-5">
 
-@app.route("/")
+<h2 class="text-center mb-4">Secure Cloud Storage System</h2>
+
+{% if 'user' not in session %}
+
+<div class="row">
+    <div class="col-md-6">
+        <h4>Register</h4>
+        <form method="POST" action="/register">
+            <input class="form-control mb-2" name="username" placeholder="Username" required>
+            <input class="form-control mb-2" type="password" name="password" placeholder="Password" required>
+            <button class="btn btn-primary w-100">Register</button>
+        </form>
+    </div>
+
+    <div class="col-md-6">
+        <h4>Login</h4>
+        <form method="POST" action="/login">
+            <input class="form-control mb-2" name="username" placeholder="Username" required>
+            <input class="form-control mb-2" type="password" name="password" placeholder="Password" required>
+            <button class="btn btn-success w-100">Login</button>
+        </form>
+    </div>
+</div>
+
+{% else %}
+
+<p>Welcome, <b>{{ session['user'] }}</b> |
+<a href="/logout">Logout</a></p>
+
+<h4>Upload File</h4>
+<form method="POST" action="/upload" enctype="multipart/form-data">
+    <input class="form-control mb-2" type="file" name="file" required>
+    <button class="btn btn-dark w-100">Upload</button>
+</form>
+
+<h4 class="mt-4">List Files</h4>
+<a href="/files" class="btn btn-outline-primary">View Files</a>
+
+{% endif %}
+
+<p class="text-danger mt-3">{{ message }}</p>
+
+</body>
+</html>
+"""
+
+@app.route('/')
 def home():
-    return render_template_string("""
-    <h1>🔐 Secure Cloud Storage System</h1>
+    return render_template_string(HTML, message="")
 
-    <h2>Register</h2>
-    <form method="post" action="/register">
-        Username: <input type="text" name="username"><br>
-        Password: <input type="password" name="password"><br>
-        <input type="submit" value="Register">
-    </form>
-
-    <h2>Login</h2>
-    <form method="post" action="/login">
-        Username: <input type="text" name="username"><br>
-        Password: <input type="password" name="password"><br>
-        <input type="submit" value="Login">
-    </form>
-
-    <h2>Upload File</h2>
-    <form method="post" action="/upload" enctype="multipart/form-data">
-        <input type="file" name="file">
-        <input type="submit" value="Upload">
-    </form>
-
-    <h2>List Files</h2>
-    <a href="/files">View Files</a>
-    """)
-
-# ================= REGISTER =================
-
-@app.route("/register", methods=["POST"])
+@app.route('/register', methods=['POST'])
 def register():
-    username = request.form["username"]
-    password = request.form["password"]
+    username = request.form['username']
+    password = request.form['password']
 
     if username in users:
-        return "User already exists!"
+        return render_template_string(HTML, message="User already exists!")
 
-    users[username] = password
-    return "Registered Successfully! <a href='/'>Go Back</a>"
+    users[username] = generate_password_hash(password)
+    return render_template_string(HTML, message="Registration successful!")
 
-# ================= LOGIN =================
-
-@app.route("/login", methods=["POST"])
+@app.route('/login', methods=['POST'])
 def login():
-    username = request.form["username"]
-    password = request.form["password"]
+    username = request.form['username']
+    password = request.form['password']
 
-    if username in users and users[username] == password:
-        session["user"] = username
-        return "Login Successful! <a href='/'>Go Back</a>"
+    if username in users and check_password_hash(users[username], password):
+        session['user'] = username
+        return redirect('/')
 
-    return "Invalid Credentials! <a href='/'>Go Back</a>"
+    return render_template_string(HTML, message="Invalid credentials!")
 
-# ================= UPLOAD =================
+@app.route('/logout')
+def logout():
+    session.pop('user', None)
+    return redirect('/')
 
-@app.route("/upload", methods=["POST"])
+@app.route('/upload', methods=['POST'])
 def upload():
-    if "file" not in request.files:
-        return "No file part"
+    if 'user' not in session:
+        return redirect('/')
 
-    file = request.files["file"]
+    file = request.files['file']
 
-    if file.filename == "":
-        return "No selected file"
+    if file:
+        filename = session['user'] + "/" + file.filename
 
-    filename = secure_filename(file.filename)
+        # Upload to primary bucket
+        s3.put_object(Bucket=PRIMARY_BUCKET, Key=filename, Body=file)
 
-    try:
-        # Upload to Primary Bucket
-        s3.upload_fileobj(file, PRIMARY_BUCKET, filename)
+        # Backup copy
+        s3.copy_object(
+            Bucket=BACKUP_BUCKET,
+            CopySource={'Bucket': PRIMARY_BUCKET, 'Key': filename},
+            Key=filename
+        )
 
-        # Reset file pointer before backup upload
-        file.seek(0)
+        return render_template_string(HTML, message="File uploaded & backed up successfully!")
 
-        # Upload to Backup Bucket
-        s3.upload_fileobj(file, BACKUP_BUCKET, filename)
+    return render_template_string(HTML, message="No file selected!")
 
-        return "<h2>File Uploaded & Backed Up Successfully</h2><a href='/'>Go Back</a>"
-
-    except Exception as e:
-        return f"Upload Failed: {str(e)}"
-
-# ================= LIST FILES =================
-
-@app.route("/files")
+@app.route('/files')
 def list_files():
-    try:
-        response = s3.list_objects_v2(Bucket=PRIMARY_BUCKET)
+    if 'user' not in session:
+        return redirect('/')
 
-        if "Contents" not in response:
-            return "No files found."
+    response = s3.list_objects_v2(Bucket=PRIMARY_BUCKET, Prefix=session['user'] + "/")
+    files = []
 
-        file_list = "<h2>Files in Primary Bucket:</h2><ul>"
+    if 'Contents' in response:
+        for obj in response['Contents']:
+            files.append(obj['Key'])
 
-        for obj in response["Contents"]:
-            file_list += f"<li>{obj['Key']}</li>"
+    return "<br>".join(files) if files else "No files found."
 
-        file_list += "</ul><a href='/'>Go Back</a>"
-
-        return file_list
-
-    except Exception as e:
-        return f"Error listing files: {str(e)}"
-
-# ================= RUN APP =================
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=80)
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=80)
