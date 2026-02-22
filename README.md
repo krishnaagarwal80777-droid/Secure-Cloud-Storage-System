@@ -1,178 +1,142 @@
-Secure Cloud Storage System
-Overview
+# Secure Cloud Storage System
 
-This project is a secure cloud-based file storage system built using AWS EC2, Amazon S3, and Flask. The application allows users to register, log in, upload files securely, and store them in Amazon S3 with backup redundancy.
+A cloud-based secure file storage application built using Flask, AWS
+EC2, and Amazon S3.\
+The system implements IAM role-based authentication, session-based user
+authentication, and automatic backup replication.
 
-The system demonstrates secure authentication, IAM role-based access control, and cloud storage best practices.
+------------------------------------------------------------------------
 
-Architecture
+## Project Overview
 
-Client (Browser)
-→ Flask Application (EC2 Instance)
-→ IAM Role (Instance Profile)
-→ Amazon S3 Primary Bucket
+-   Users can register and log in
+-   Authenticated users can upload files
+-   Files are stored securely in Amazon S3
+-   Each upload is automatically backed up
+-   No AWS credentials are hardcoded
+-   IAM role-based authentication is used
+
+------------------------------------------------------------------------
+
+## Architecture
+
+Client (Browser)\
+→ Flask Application (EC2 Instance)\
+→ IAM Role (Instance Profile)\
+→ Amazon S3 Primary Bucket\
 → Amazon S3 Backup Bucket
 
-Features
+------------------------------------------------------------------------
 
-User registration and login
+## Key Features
 
-Password hashing using Werkzeug
+-   User registration and login
+-   Password hashing using Werkzeug
+-   Session-based authentication
+-   Secure file upload to Amazon S3
+-   User-specific folder isolation (username/filename)
+-   Automatic backup to secondary bucket
+-   IAM role-based secure access (no stored credentials)
+-   Clean Bootstrap UI
 
-Session-based authentication
+------------------------------------------------------------------------
 
-Secure file upload to S3
+## Security Design
 
-User-specific folder isolation in S3
+### IAM Role-Based Authentication
 
-Automatic backup to secondary S3 bucket
+-   EC2 instance has an attached IAM role
+-   boto3 retrieves temporary credentials automatically
+-   No AWS access keys stored in code or configuration
 
-IAM role-based authentication (no hardcoded AWS credentials)
+### Session-Based Access Control
 
-Clean Bootstrap-based UI
+-   User session created after successful login
+-   Protected routes verify session before allowing access
+-   Unauthorized uploads are blocked
 
-Runs securely on port 80 without root credential conflict
+### Password Protection
 
-Technologies Used
+-   Passwords are hashed using:
+    -   generate_password_hash
+    -   check_password_hash
 
-Python 3
+### Data Isolation
 
-Flask
+-   Each user's files stored under: username/filename
 
-boto3 (AWS SDK for Python)
+### Backup Strategy
 
-Amazon EC2
+-   File uploaded to primary bucket
+-   Automatically copied to backup bucket
 
-Amazon S3
+------------------------------------------------------------------------
 
-IAM Role (Instance Profile)
+## Technologies Used
 
-Bootstrap 5
+-   Python 3
+-   Flask
+-   boto3
+-   Amazon EC2
+-   Amazon S3
+-   IAM Role (Instance Profile)
+-   Bootstrap 5
 
-Security Implementation
-1. IAM Role-Based Access
+------------------------------------------------------------------------
 
-The EC2 instance uses an attached IAM role to access Amazon S3.
-No AWS access keys are stored in the application.
+## Setup Instructions
 
-boto3 automatically retrieves temporary credentials from the Instance Metadata Service.
+1.  Launch EC2 Instance
 
-2. Password Hashing
+    -   Amazon Linux 2023
+    -   Attach IAM role with S3 permissions
 
-User passwords are stored using hashed values via:
+2.  Install dependencies
 
-werkzeug.security.generate_password_hash
-3. Session-Based Authentication
+    sudo dnf install python3 -y\
+    pip3 install flask boto3 werkzeug
 
-After login, a Flask session is created.
-Protected routes such as file upload verify the session before granting access.
+3.  Configure Security Group
 
-4. User-Based File Isolation
+    -   Allow HTTP (Port 80)
+    -   Source: 0.0.0.0/0
 
-Files are stored in S3 using the structure:
+4.  Allow Python to bind to Port 80 (without sudo)
 
-username/filename
+    sudo setcap 'cap_net_bind_service=+ep' /usr/bin/python3.9
 
-This ensures logical separation between users.
+5.  Run application
 
-5. Backup Redundancy
+    python3 app.py
 
-Each uploaded file is:
-
-Uploaded to the primary bucket
-
-Automatically copied to the backup bucket
-
-Bucket Configuration
-
-Primary Bucket: krishna-primary-storage
-
-Backup Bucket: krishna-backup-storage
-
-Versioning enabled (recommended)
-
-Setup Instructions
-1. Launch EC2 Instance
-
-Use Amazon Linux 2023
-
-Attach IAM role with S3 access permissions
-
-2. Install Dependencies
-sudo dnf install python3 -y
-pip3 install flask boto3 werkzeug
-3. Allow Port 80
-
-Add inbound rule in Security Group:
-
-Type: HTTP
-
-Port: 80
-
-Source: 0.0.0.0/0
-
-4. Allow Python to Bind to Port 80
-sudo setcap 'cap_net_bind_service=+ep' /usr/bin/python3.9
-5. Run Application
-python3 app.py
-
-Access in browser:
+Access the app via:
 
 http://PUBLIC-IP
-How Authentication Works
 
-User registers.
+------------------------------------------------------------------------
 
-Password is hashed and stored.
+## Problems Solved During Development
 
-On login, session variable is created.
+-   Removed expired temporary AWS credentials
+-   Eliminated root credential conflicts caused by sudo
+-   Implemented IAM role-based authentication
+-   Secured upload route using session validation
+-   Added automatic S3 backup replication
 
-Upload route checks for active session.
+------------------------------------------------------------------------
 
-If not authenticated, access is denied.
+## Learning Outcomes
 
-Key Improvements Made During Development
+-   Understanding IAM roles and temporary credentials
+-   Debugging AWS ExpiredToken errors
+-   Managing privileged ports securely in Linux
+-   Implementing secure session-based authentication
+-   Designing scalable cloud storage architecture
 
-Removed hardcoded AWS credentials.
+------------------------------------------------------------------------
 
-Switched to IAM role-based authentication.
+## Author
 
-Resolved ExpiredToken errors caused by root credentials.
-
-Eliminated sudo-related permission conflicts.
-
-Implemented proper session-based access control.
-
-Added automatic backup bucket replication.
-
-Future Enhancements
-
-Persistent database (RDS or DynamoDB)
-
-HTTPS using SSL/TLS
-
-Role-based access control (Admin/User)
-
-File download feature
-
-Object lifecycle policies
-
-CloudFront integration
-
-Learning Outcomes
-
-Understanding IAM roles and temporary credentials
-
-Debugging AWS ExpiredToken issues
-
-Managing Linux port binding permissions
-
-Implementing session-based authentication
-
-Designing secure cloud-native architecture
-
-Author
-
-Krishna Agarwal
-B.E. Electronics Engineering
+Krishna Agarwal\
+B.E. Electronics Engineering\
 Cloud Computing Lab Project
